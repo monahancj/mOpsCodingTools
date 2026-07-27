@@ -1,0 +1,6 @@
+remove ".0" from version.  Breaks Import-Module.
+	If version is 2023.5.5.0
+	Install-Module directory is 2023.5.5
+	psd1 version is 2023.5.5.0
+	Import-Module fails on version mismatch
+

@@ -1,0 +1,9 @@
+Date,Version,Type,Cmdlet,Headline,Notes
+5/21/2031,2031.5.21.0,0_Security,name,In case of vulnerabilities.,Reference info.
+5/21/2031,2031.5.21.0,1_Removed,name,For now removed features.,Reference info.
+5/21/2031,2031.5.21.0,2_Fixed,name,For any bug fixes.,Reference info.
+5/21/2031,2031.5.21.0,3_Changed,name,For changes in existing functionality.,Reference info.
+5/21/2031,2031.5.21.0,4_ Added,name,For new features.,Reference info.
+5/21/2031,2031.5.21.0,5_Deprecated,name,For soon-to-be removed features.,Reference info.
+5/22/2018,2018.6.6.0,4_Added,Test-DriveLetterIsMapped,Tests if a drive letter is mapped or not,Returns $true or $false.
+1/7/2019,,2_Fixed,New-mModuleFromFile,Now it works,Updated some parameter types from string to something specific; Fixed test logic in a couple of places; Changed some debugging Write-Output lines to Write-Verbose; Changed some console output to be the standard format

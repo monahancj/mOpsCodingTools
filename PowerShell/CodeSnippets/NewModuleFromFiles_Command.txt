@@ -1,0 +1,2 @@
+New-mModuleFromFile -TargetPath '.' -ModuleName mVMwarePowerCLI -Version "2019.9.03" -Files (Get-Content .\mVMwarePowerCLI_FileList.txt) -Author "cmonahan" -CompanyName "companyname WorldWide" -Description "Internal tools to manage our VMware environment." -ProjectUri 'https://github.monster.com/OPS/mVMwarePowerCLI' -LicenseUri 'https://www.monster.com/inside/terms-of-use'
+
