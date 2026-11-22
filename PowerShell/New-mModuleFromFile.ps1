@@ -1,248 +1,284 @@
 function New-mModuleFromFile {
-
 	<#
     .SYNOPSIS
-        Build a script module from a list of functions contained in individual ps1 files.
+        Creates a PowerShell module from a list of function files.
 
     .DESCRIPTION
-        Creates the .psd1 and .psm1 files in subdirectory named for the module name.  The individual function .ps1 files are concatenated into the .psm1 file and the .psd1 file is created using parameter values passed into this function or default values.
+        This function reads a list of function files from a text file, embeds them into a PSM1 file,
+        generates a changelog from Git history, and creates a module manifest using New-ModuleManifest.
 
-	.PARAMETER Tags
-		A content tag classifying technologies the module supports.  Helps in searching for modules in repositories, other places.  See the New-ModuleManifest documentation for more details.
+    .PARAMETER SourcePath
+        The source directory path containing the function files and module build files.
 
-	.PARAMETER  TargetPath
-        The directory that the module directory will be created in.  If not specified than the current directory will be used.
+    .PARAMETER ModuleName
+        The name of the module to create.
 
-	.PARAMETER  ModuleName
-		The name of the module.  This will be used to make the module's directory, name the .psd1 and .psm1 files, and name the module in the .psd1 file.
+    .PARAMETER OutputPath
+        The output directory path where the module will be created. Default is "__Module\ModuleName" relative to SourcePath.
 
-	.PARAMETER  Version
-		The version of the module in the format of the type System.Version.  See the New-ModuleManifest documentation for more details.
-		https://docs.microsoft.com/en-us/dotnet/api/system.version.-ctor?view=netframework-4.7.2
-		https://msdn.microsoft.com/en-us/library/system.version(v=vs.110).aspx .
-		https://www.powershellmagazine.com/2014/01/03/pstip-validating-version-numbers-without-regex/
+    .PARAMETER FileListPath
+        The path to the text file containing the list of function files to include. Default is "__ModuleBuildFiles\ModuleName_FileList.txt".
 
-	.PARAMETER  Files
-		An array of one or more .ps1 function files to be put into the module.  They can be passed as strings, file objects, or anything else as long as PowerShell can find the file(s) you want.
+    .PARAMETER GitStartDate
+        The start date for Git history to generate changelog. Default is "5/1/2024".
 
-    .PARAMETER Guid
-		By default generated with New-Guid, but can be overwritten with a valid Guid when passed as a parameter.  See the New-ModuleManifest documentation for more details.
+    .PARAMETER ModuleVersion
+        The version of the module. If not specified, it will be extracted from the latest release notes file.
 
-	.PARAMETER Author
-		The module's author.  Defaults to the username in the current shell environment.  See the New-ModuleManifest documentation for more details.
+    .PARAMETER Author
+        The author of the module. Default is extracted from git config or "Unknown".
 
-	.PARAMETER CompanyName
-		The author's company.  Defaults to $null if not set.  See the New-ModuleManifest documentation for more details.
+    .PARAMETER ProjectUri
+        The project URI for the module. Default is extracted from a placeholder or not set.
 
-	.PARAMETER ReleaseNotes
-		A multiline text string for the the current version's release notes.  See the New-ModuleManifest documentation for more details.
+    .PARAMETER LicenseUri
+        The license URI for the module. Default is "https://opensource.org/license/mit".
 
-	.PARAMETER Description
-		A short description of the modules scope and functionality.  Defaults to $null if not set.  See the New-ModuleManifest documentation for more details.
+    .PARAMETER Description
+        The description of the module. If not specified, it will be generated from function help.
 
-	.PARAMETER MinimumRequiredPowerShellVersion
-		Defaults to 7.0.0.  See the New-ModuleManifest documentation for more details.
+    .EXAMPLE
+        New-mModuleFromFile -SourcePath "D:\repos\mMyModule" -ModuleName "mMyModule"
 
-	.PARAMETER ProjectURI
-		A link to a location related to the function, such as a Git repo or Wiki page.  See the New-ModuleManifest documentation for more details.
-
-	.PARAMETER LicenseURI
-		A link to the software license the code is released under.  See the New-ModuleManifest documentation for more details.
-
-	.PARAMETER ExternalModuleDependencies
-		An array of external module dependencies.  See the New-ModuleManifest documentation for more details.
-
-	.PARAMETER ProcessorArchitecture
-		The processor architecture of the module.  Defaults to 'None'.  See the New-ModuleManifest documentation for more details.
-
-		.EXAMPLE
-        New-mModuleFromFile -TargetPath C:\Temp\ -ModuleName TestModule -Version "1.0.0.0" -Files (Get-Content .\testfiles.txt)
+    .EXAMPLE
+        New-mModuleFromFile -SourcePath "D:\repos\mMyModule" -ModuleName "mMyModule" -OutputPath "D:\Output\Modules\mMyModule" -GitStartDate "1/1/2023"
 
     .NOTES
-        For best compatibility and readability inside the .psm1 file the function's comment based help should be placed after the first bracket.  For example:
+        The function requires Git to be installed and accessible in the PATH.
+        The function requires the function files to have proper PowerShell function syntax.
 
-		function Get-Something {
-		< #
-			.SYNOPSIS
-			blah
-
-			et cetera
-		# >  (Note: the space between the <, #, and > characters is so that this section isn't parsed as a real comment.)
-
-			param (stuff)
-
-			code
-			code
-			code
-		}
-
-		Created by:   	cmonahan
-		Organization: 	companyname, GTI
-
+    .LINK
+        https://github.com/monahancj/mCiscoUcsPowerTool
 #>
 
-	#TODO: Add parameter validation.
-	#TODO: Update comment based help.
-	#TODO: Update to match PowerShell function template.
-	#TODO: Update all output to the standard format using the snippet "OutputMessage".
-	#TODO: Add WhatIf support
-
-	[cmdletbinding()]
+	[cmdletbinding(SupportsShouldProcess = $true, ConfirmImpact = "Medium")]
 	param (
-		[Parameter(Position = 0, Mandatory = $false, ValueFromPipeline = $false)]$TargetPath = (Get-Location),
-		[Parameter(Position = 1, Mandatory = $true, ValueFromPipeline = $false)][System.String]$ModuleName,
-		[Parameter(Position = 2, Mandatory = $true, ValueFromPipeline = $false)][System.Version]$Version = $null,
-		[Parameter(Position = 3, Mandatory = $true, ValueFromPipeline = $false)]$Files,
-		[Parameter(Position = 4, Mandatory = $false, ValueFromPipeline = $false)]$Guid = (New-Guid),
-		[Parameter(Position = 5, Mandatory = $false, ValueFromPipeline = $false)]$ExternalModuleDependencies = $null,
-		[Parameter(Position = 6, Mandatory = $false, ValueFromPipeline = $false)][System.String]$Author = $env:USERNAME,
-		[Parameter(Position = 7, Mandatory = $true, ValueFromPipeline = $false)][System.String]$CompanyName,
-		[Parameter(Position = 8, Mandatory = $true, ValueFromPipeline = $false)][System.String]$Description,
-		[Parameter(Position = 9, Mandatory = $true, ValueFromPipeline = $false)][System.String]$Tags = $null,
-		[Parameter(Position = 10, Mandatory = $false, ValueFromPipeline = $false)][System.Version]$MinimumRequiredPowerShellVersion = [System.Version]"7.0.0",
-		[Parameter(Position = 11, Mandatory = $true, ValueFromPipeline = $false)][System.String]$ReleaseNotes,
-		[Parameter(Position = 12, Mandatory = $true, ValueFromPipeline = $false)][System.Uri]$ProjectUri,
-		[Parameter(Position = 13, Mandatory = $true, ValueFromPipeline = $false)][System.Uri]$LicenseUri,
-		[Parameter(Position = 14, Mandatory = $false, ValueFromPipeline = $false)][System.String]$ProcessorArchitecture = 'None'
+		[Parameter(Position = 0, Mandatory = $true, ValueFromPipeline = $false)]
+		[string]$SourcePath,
+
+		[Parameter(Position = 1, Mandatory = $true, ValueFromPipeline = $false)]
+		[string]$ModuleName,
+
+		[Parameter(Position = 2, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$OutputPath,
+
+		[Parameter(Position = 3, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$FileListPath,
+
+		[Parameter(Position = 4, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$GitStartDate = "5/1/2024",
+
+		[Parameter(Position = 5, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$ModuleVersion,
+
+		[Parameter(Position = 6, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$Author,
+
+		[Parameter(Position = 7, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$ProjectUri,
+
+		[Parameter(Position = 8, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$LicenseUri = "https://opensource.org/license/mit",
+
+		[Parameter(Position = 9, Mandatory = $false, ValueFromPipeline = $false)]
+		[string]$Description
 	)
 
-	#TODO: Don't use "#Requires -RunAsAdministrator".  It requires the session to be run as Administrator to even load the module.  Change to a code test to make sure this function is running in an Administrator session.
-	# #Requires -Module mPowerShellGenerics,mWindowsGeneral
-
-	#TODO: Add support to use a configuration file for the routine parameters that don't change from build to build.  Everything but the version?
-
 	begin {
+		Write-Verbose -Message "New-mModuleFromFile - Starting module creation process"
 
-		# The function Get-mCurrentLine is used in every script and function.
-		if (Test-Path -Path function:\Get-mCurrentLine) { Write-Verbose "$(Get-mNow)- $($MyInvocation.InvocationName) - Line $(Get-mCurrentLine) - Function Get-mCurrentLine is loaded in the session." }
-		else { throw "$(Get-mNow)- $($MyInvocation.InvocationName) - Line 52 or so - Function Get-mCurrentLine is not loaded in the session." }
-
-		Write-Verbose "$(Get-mNow)- $($MyInvocation.InvocationName) - Line $(Get-mCurrentLine) - Function started."
-
-		# Test for required modules.  Internal support modules and vendor specific technology modules in addition to the builtin Microsoft PowerShell modules.  Remove this section if it's not needed.
-		$ModuleList = "mPowerShellGenerics"
-		$ModuleList | ForEach-Object {
-			if (Test-mIsModuleLoaded -Name $_) { Write-Verbose "$(Get-mNow)- $($MyInvocation.InvocationName) - Line $(Get-mCurrentLine) - Module $($_) is loaded in the session." }
-			else { throw "$(Get-mNow)- $($MyInvocation.InvocationName) - Line $(Get-mCurrentLine) - Module $($_) is not loaded in the session." }
+		# Validate SourcePath
+		if (-not (Test-Path -Path $SourcePath)) {
+			throw "SourcePath '$SourcePath' does not exist."
 		}
 
-	} # end begin block
+		# Set default paths
+		if ([string]::IsNullOrWhiteSpace($FileListPath)) {
+			$FileListPath = Join-Path -Path $SourcePath -ChildPath "__ModuleBuildFiles\$($ModuleName)_FileList.txt"
+		}
 
-	# ======================================================================================
+		if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+			$OutputPath = Join-Path -Path $SourcePath -ChildPath "__Module\$ModuleName"
+		}
+
+		# Create output directory if it doesn't exist
+		if (-not (Test-Path -Path $OutputPath)) {
+			Write-Verbose -Message "Creating output directory: $OutputPath"
+			New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+		}
+
+		# Validate FileListPath
+		if (-not (Test-Path -Path $FileListPath)) {
+			throw "FileListPath '$FileListPath' does not exist."
+		}
+	}
 
 	process {
-		# Validate inputs
-		if (-not (Test-Path -Path $TargetPath)) {
-			Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** TargetPath not valid.  Aborting."
-			break
+		Write-Verbose -Message "Reading file list from: $FileListPath"
+		$FileList = Get-Content -Path $FileListPath
+
+		if ($FileList.Count -eq 0) {
+			throw "File list is empty."
 		}
 
-		# Due to a bug/oddity files on network drives must be in UNC format.
-		if (Test-mIsDriveLetterMapped -DriveLetter ($TargetPath.Substring(0, 1))) {
-			Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** TargetPath is a drive letter mapped to a network share.  Due to a bug/oddity files on network drives must be in UNC format."
-			break
-		}
+		Write-Verbose -Message "Found $($FileList.Count) files to include"
 
-		$Files | ForEach-Object {
-			Write-Verbose "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** File string is: $($_)"
-			if (-not (Test-Path -Path $_)) {
-				Get-ChildItem $_
-				Test-Path -Path $_
-				Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** File not found: $($_) - Aborting."
-				break
+		# Read and embed function files
+		$FunctionContent = @()
+		$FunctionNames = @()
+
+		foreach ($File in $FileList) {
+			$FilePath = Join-Path -Path $SourcePath -ChildPath $File
+
+			if (Test-Path -Path $FilePath) {
+				Write-Verbose -Message "Reading function file: $FilePath"
+				$Content = Get-Content -Path $FilePath -Raw
+
+				# Extract function name from file
+				if ($Content -match 'function\s+([\w-]+)') {
+					$FunctionName = $Matches[1]
+					$FunctionNames += $FunctionName
+					Write-Verbose -Message "Found function: $FunctionName"
+				}
+
+				$FunctionContent += $Content
+			}
+			else {
+				Write-Warning -Message "File not found: $FilePath"
 			}
 		}
 
-		if ( ($null -eq $Description) -or ($Description -eq "") ) {
-			Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** Parameter Description is null or empty.  Aborting."
-			break
+		if ($FunctionNames.Count -eq 0) {
+			throw "No functions found in the specified files."
 		}
 
-		Write-Verbose -Message "$(Get-mCurrentLine)"
+		# Generate changelog from Git history
+		Write-Verbose -Message "Generating changelog from Git history"
+		$GitHistory = git -C $SourcePath log --after="$GitStartDate" --pretty=format:"%h|%ad|%s" --date=short 2>$null
 
-		if ( Test-Path -Path "$($TargetPath)\__Module\$($ModuleName)" ) {
-			Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** Module directory already exists: $($TargetPath)\__Module\$($ModuleName) - Aborting."
-			break
+		if ($GitHistory) {
+			$ChangelogContent = "Git History (After $GitStartDate):`n"
+			foreach ($Commit in $GitHistory) {
+				$Parts = $Commit -split '\|'
+				if ($Parts.Count -ge 3) {
+					$ChangelogContent += "- Commit $($Parts[0]) ($($Parts[1])): $($Parts[2])`n"
+				}
+			}
 		}
 		else {
-			$ModuleDirectory = "$($TargetPath)\__Module\$($ModuleName)"
-			$PSM1file = "$($ModuleName).psm1"
-			$PSM1fileFullPath = "$($TargetPath)\__Module\$($ModuleName)\$($ModuleName).psm1"
-			$PSD1file = "$($ModuleName).psd1"
-			$PSD1fileFullPath = "$($TargetPath)\__Module\$($ModuleName)\$($ModuleName).psd1"
+			$ChangelogContent = "No Git history found after $GitStartDate."
 		}
 
-		Write-Verbose -Message "$(Get-mCurrentLine)"
-		Write-Verbose -Message "TargetPath-`t$($TargetPath)`nModuleName-`t$($ModuleName)`nModuleDirectory-`t	$($ModuleDirectory)`nPSM1file-`t$($PSM1file)`nPSM1fileFullPath-`t$($PSM1fileFullPath)`nPSD1file-`t$($PSD1file)`nPSD1fileFullPath-`t$($PSD1fileFullPath)`n`n"
+		# Try to read release notes if available
+		$ReleaseNotesPath = Join-Path -Path $SourcePath -ChildPath "__ModuleBuildFiles"
+		$ReleaseNotesFiles = Get-ChildItem -Path $ReleaseNotesPath -Filter "*$ModuleName*_ReleaseNotes*.txt" -ErrorAction SilentlyContinue
 
-		if (-not (Test-Path $ModuleDirectory)) { mkdir $ModuleDirectory }
+		if ($ReleaseNotesFiles) {
+			$LatestReleaseNotes = $ReleaseNotesFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+			Write-Verbose -Message "Reading release notes from: $($LatestReleaseNotes.FullName)"
+			$ReleaseNotesContent = Get-Content -Path $LatestReleaseNotes.FullName -Raw
+			$ReleaseNotes = "$ReleaseNotesContent`n`n$ChangelogContent"
+		}
+		else {
+			$ReleaseNotes = $ChangelogContent
+		}
 
-		# Create PSM1 files
-		Write-Verbose -Message "$(Get-mCurrentLine)"
-		Write-Verbose -Message "$($Files)"
-		$Files | ForEach-Object { Get-Content $_ }
-
-		Write-Verbose -Message "$(Get-mCurrentLine)"
-		if (-not (test-path $PSM1fileFullPath)) {
-			#TODO: Add some sort of overwrite or abort logic if the PSM1 file already exists
-			$Files | ForEach-Object {
-				Write-Verbose -Message "$(Get-mCurrentLine)"
-				Write-Verbose -Message "$(Get-Content -Path $_)"
-				Add-Content -Value (Get-Content -Path "$($_)") -Path $PSM1fileFullPath
+		# Extract module version if not specified
+		if ([string]::IsNullOrWhiteSpace($ModuleVersion)) {
+			if ($ReleaseNotesFiles) {
+				$LatestReleaseNotes = $ReleaseNotesFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+				if ($LatestReleaseNotes.Name -match '(\d+\.\d+\.\d+\.\d+)') {
+					$ModuleVersion = $Matches[1]
+					Write-Verbose -Message "Extracted module version from release notes: $ModuleVersion"
+				}
 			}
-			Write-Verbose -Message "$(Get-mCurrentLine)"
-			Write-Verbose -Message "$(Get-ChildItem $PSM1fileFullPath)"
-		}
-		else { Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** errmsg $(Get-mCurrentLine) create psm1 $(Get-ChildItem $PSM1fileFullPath)" }
 
-		Write-Verbose -Message "$(Get-mCurrentLine)"
-
-		# Create PSD1 file
-		#todo: Set value of $Version- 1) user entered as parameter, 2) incremement from current module version, 3) set to 0.0.0.1
-
-		Write-Verbose -Message "$(Get-mCurrentLine)"
-
-		#TODO: Research if this is needed anymore.
-		if (test-path $PSM1fileFullPath) {
-			<# if (Test-Path -Path "$($TargetPath)\$($ModuleName)_ChangeLog.csv") {
-				# If the changelog CSV file exists copy it to the module directory.
-				Copy-Item -Path "$($TargetPath)\$($ModuleName)_ChangeLog.csv" -Destination $ModuleDirectory
+			if ([string]::IsNullOrWhiteSpace($ModuleVersion)) {
+				$ModuleVersion = "1.0.0.0"
+				Write-Verbose -Message "Using default module version: $ModuleVersion"
 			}
-			if (Test-Path -Path "$($TargetPath)\$($ModuleName)_ReleaseNotes.csv") {
-				# If the rele file exists copy it to the module directory.
-				Copy-Item -Path "$($TargetPath)\$($ModuleName)_ReleaseNotes.csv" -Destination $ModuleDirectory
-			} #>
-			Write-Verbose -Message "$(Get-Date)- $(Get-mCurrentLine) *** Creating the psd1 file $($PSD1fileFullPath)"
-			#TODO: Fix error when specifying a GUID.  "New-mModuleFromFile: Cannot process argument transformation on parameter 'Guid'. Cannot convert the "System.Object[]" value of type "System.Object[]" to type "System.Guid"."
-			#			New-ModuleManifest -Path $PSD1fileFullPath -RootModule $PSM1file -Guid $Guid -Author $Author -CompanyName $CompanyName -ModuleVersion $Version -Description $Description -Tags $Tags -ProcessorArchitecture None -PowerShellVersion $MinimumRequiredPowerShellVersion -ReleaseNotes $ReleaseNotes -ProjectUri $ProjectUri -LicenseUri $LicenseUri
-			New-ModuleManifest -Path $PSD1fileFullPath `
-				-Guid $Guid `
-				-RootModule $PSM1file `
-				-Author $Author `
-				-CompanyName $CompanyName `
-				-ModuleVersion $Version `
-				-Description $Description `
-				-Tags $Tags `
-				-ProcessorArchitecture $ProcessorArchitecture `
-				-PowerShellVersion $MinimumRequiredPowerShellVersion `
-				-ReleaseNotes $ReleaseNotes `
-				-ProjectUri $ProjectUri `
-				-LicenseUri $LicenseUri
-			if ($VerbosePreference -ne 'SilentlyContinue') { Get-ChildItem $ModuleDirectory }
 		}
-		else { Write-Output "$(Get-Date)- $($MyInvocation.InvocationName) Line $(Get-mCurrentLine) *** No psm1 file" }
 
-		# Test module
-		Test-ModuleManifest -Path $PSD1fileFullPath
-		Write-Verbose -Message "$(Get-mCurrentLine)"
+		# Get author from git config if not specified
+		if ([string]::IsNullOrWhiteSpace($Author)) {
+			try {
+				$GitAuthor = git -C $SourcePath config user.name 2>$null
+				if ($GitAuthor) {
+					$Author = $GitAuthor
+					Write-Verbose -Message "Extracted author from git config: $Author"
+				}
+			}
+			catch {
+				# Ignore errors
+			}
 
-	} #end of the process block
+			if ([string]::IsNullOrWhiteSpace($Author)) {
+				$Author = "Unknown"
+			}
+		}
+
+		# Generate description if not specified
+		if ([string]::IsNullOrWhiteSpace($Description)) {
+			$Description = "PowerShell module for $ModuleName functions."
+		}
+
+		# Create PSM1 file with embedded functions
+		$Psm1Path = Join-Path -Path $OutputPath -ChildPath "$ModuleName.psm1"
+		Write-Verbose -Message "Creating PSM1 file: $Psm1Path"
+
+		$Psm1Content = "# $ModuleName Module`n# Version: $ModuleVersion`n# Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n`n"
+
+		foreach ($Content in $FunctionContent) {
+			$Psm1Content += $Content + "`n`n"
+		}
+
+		# Add export statement
+		$Psm1Content += "# Export functions`nExport-ModuleMember -Function @(`n"
+		foreach ($FuncName in $FunctionNames) {
+			$Psm1Content += "    '$FuncName',`n"
+		}
+		$Psm1Content = $Psm1Content.TrimEnd(",`n") + "`n)"
+
+		$Psm1Content | Out-File -FilePath $Psm1Path -Encoding UTF8 -Force
+		Write-Verbose -Message "PSM1 file created successfully"
+
+		# Create PSD1 file using New-ModuleManifest
+		$Psd1Path = Join-Path -Path $OutputPath -ChildPath "$ModuleName.psd1"
+		Write-Verbose -Message "Creating PSD1 file: $Psd1Path"
+
+		$ManifestParams = @{
+			Path              = $Psd1Path
+			RootModule        = "$ModuleName.psm1"
+			ModuleVersion     = $ModuleVersion
+			Author            = $Author
+			Copyright         = "(c) $(Get-Date -Format yyyy) $Author. All rights reserved."
+			Description       = $Description
+			PowerShellVersion = "5.1"
+			FunctionsToExport = $FunctionNames
+			CmdletsToExport   = @()
+			VariablesToExport = @()
+			AliasesToExport   = @()
+			ReleaseNotes      = $ReleaseNotes
+		}
+
+		if (-not [string]::IsNullOrWhiteSpace($ProjectUri)) {
+			$ManifestParams.ProjectUri = $ProjectUri
+		}
+
+		if (-not [string]::IsNullOrWhiteSpace($LicenseUri)) {
+			$ManifestParams.LicenseUri = $LicenseUri
+		}
+
+		New-ModuleManifest @ManifestParams
+		Write-Verbose -Message "PSD1 file created successfully"
+
+		Write-Output "Module '$ModuleName' created successfully at: $OutputPath"
+		Write-Output "Version: $ModuleVersion"
+		Write-Output "Functions exported: $($FunctionNames.Count)"
+		Write-Output "Functions: $($FunctionNames -join ', ')"
+	}
 
 	end {
-
-		Remove-Variable TargetPath, ModuleName, Version, Files, Guid, Author, CompanyName, Tags, Description, MinimumRequiredPowerShellVersion, ProjectUri, LicenseUri, PSM1file, PSM1fileFullPath, ModuleDirectory, PSD1fileFullPath, PSD1file, ReleaseNotes, ExternalModuleDependencies, ProcessorArchitecture -ErrorAction SilentlyContinue -WhatIf:$false # Using -WhatIf:$false to suppress unnecessary messages when a calling function has -Whatif:$true enabled.
-		[System.GC]::Collect() # Memory cleanup
-
-	} #end of the end block
-
-} # end function
+		Write-Verbose -Message "New-mModuleFromFile - Module creation process completed"
+	}
+}
